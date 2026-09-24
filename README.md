@@ -83,7 +83,7 @@ the script follows the locale instead of hard-coding a folder name.
 
 | Selection | Result |
 | --- | --- |
-| executable file that is not a `.desktop` file (binary, AppImage, script) | a real `Name.desktop` launcher, executable, with an icon |
+| executable file that is not a `.desktop` file (binary, AppImage, script) | a real `Name.desktop` launcher, executable, with an icon — wrapped in a terminal if it is a command-line program |
 | `.desktop` file | a symlink — it already is a launcher and brings its own icon |
 | document, image, archive, folder | a symlink |
 
@@ -96,6 +96,36 @@ plain click starts the program without arguments.
 **The icon** is looked up in this order: a picture next to the program (`MeinTool.png` beside
 `MeinTool.AppImage`), then an icon of that name in the icon themes, then the generic
 `application-x-executable` — so a launcher never ends up without one.
+
+**Command-line programs** get a terminal, and that needs two details that are easy to get wrong:
+
+* `Terminal=true` does not help. cosmic-files ignores it when it opens a `.desktop` file — it runs
+  `Exec` and nothing else (`launch_desktop_entries` in `src/app.rs`: apart from `Exec` only `Path`
+  is taken from the entry). A command-line program would start invisibly.
+* Looking at the linked libraries does not help either: `cosmic-files` and `cosmic-term` are GUI
+  applications and still link no `libX11` / `libwayland` / `gtk` at all.
+
+So the terminal emulator goes into `Exec`:
+
+```ini
+Exec="/usr/bin/cosmic-term" -e "/home/you/.local/bin/himalaya" %U
+Terminal=false
+```
+
+`Terminal=false` on purpose: a launcher that *does* honour `Terminal=true` (a menu, a dock) would
+otherwise wrap a second terminal around the first one.
+
+Whether a program needs a terminal is decided in this order: an installed `.desktop` entry that
+starts the program (its own `Terminal=` wins) → AppImage = GUI application → everything else =
+command-line program. `DESKTOP_SHORTCUT_TERMINAL=yes|no` forces the answer, and `TERMINAL=<program>`
+picks another terminal emulator. The terminal is searched in this order: `$TERMINAL`,
+`xdg-terminal-exec`, `cosmic-term`, `gnome-terminal`, `konsole`, `alacritty`, `kitty`, `foot`,
+`wezterm`, `ghostty`, `xfce4-terminal`, `xterm`, `x-terminal-emulator`.
+
+With cosmic-term the window stays open after the program has ended, so its output can still be read.
+cosmic-term is also rough around the edges here: launched with `-e` it sometimes prints a Rust panic
+(`async fn resumed after completion`) while shutting down. The program itself runs in every case —
+see the tests below.
 
 **Both kinds** behave the same way otherwise:
 
@@ -182,6 +212,10 @@ Rename the actions per language by just changing `name` — e.g. `name: "Run"` a
   them in one go — which is what the desktop shortcut action needs.
 * **Desktop icons live in the XDG desktop directory.** `xdg-user-dir DESKTOP` decides; on a German
   system that is `~/Schreibtisch`, not `~/Desktop`.
+* **`Terminal=true` reaches nothing in cosmic-files.** When it opens a `.desktop` file it runs
+  `Exec` only, so a command-line program has to be wrapped in a terminal there (see above).
+  The `Terminal=` key of the generated launcher is therefore `false`, or `true` only when no
+  terminal emulator was found at all.
 * Only the field codes shown above were read from the source; `%F` / `%U` are not exercised by the
   first example (it uses `%f`), but they are by the second one.
 
@@ -198,6 +232,13 @@ cosmic-files `1:1.8.0-1.1` on CachyOS (Arch), 24 September 2026:
   (exit 1), and with `notify-send` missing from `PATH` (silent, still creates the entry).
 * The generated launchers pass `desktop-file-validate`, including a file name containing a double
   quote (escaped in `Exec`), and `gio launch MeinTool.desktop` really starts the program.
+* Terminal detection checked against real programs: `himalaya` and `lsfg-vk-cli` (no `.desktop`
+  entry) are wrapped in cosmic-term, `cosmic-files` and `lsfg-vk-ui` are not (their own `.desktop`
+  entry says so), an AppImage is not, `TERMINAL=alacritty` switches the emulator and
+  `DESKTOP_SHORTCUT_TERMINAL=no` suppresses the wrapper.
+* The wrapped launcher really runs its program: the `Exec` line was executed as it stands, and the
+  test script wrote its marker file from inside the terminal (with `cosmic-term -e` and with
+  `alacritty -e`).
 * Once for real: a launcher created on the actual `~/Schreibtisch`, checked, and removed again.
 
 ## Sources
