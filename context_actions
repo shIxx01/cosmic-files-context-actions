@@ -7,4 +7,12 @@
             "/bin/bash %f",
         ],
     ),
+    (
+        name: "Auf den Desktop",
+        confirm: false,
+        selection: Any,
+        steps: [
+            "/home/you/.local/bin/desktop-shortcut.sh %F",
+        ],
+    ),
 ]
