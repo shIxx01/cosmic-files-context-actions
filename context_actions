@@ -1,0 +1,10 @@
+[
+    (
+        name: "Ausführen",
+        confirm: false,
+        selection: Files,
+        steps: [
+            "/bin/bash %f",
+        ],
+    ),
+]
