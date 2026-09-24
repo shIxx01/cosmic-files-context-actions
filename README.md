@@ -16,6 +16,13 @@ Two examples, both taken from daily use on a CachyOS/Arch machine:
    become a symlink. The counterpart of Windows' *Send to → Desktop (create shortcut)*, which
    COSMIC Files does not have built in.
 
+![The two actions in the context menu](docs/context-menu.png)
+
+*The more/"…" section of the context menu. `Run` and `Send to Desktop` are the entries from this
+configuration (`name`); the rest of the menu is the file manager's own. The machine behind it runs a
+German system — those two labels were written in English because that is what `install.sh` does on a
+non-German system.*
+
 ## Install
 
 ### The easy way
