@@ -12,8 +12,9 @@ Two examples, both taken from daily use on a CachyOS/Arch machine:
 1. **Run a shell script** — right-click a `.sh` file → *Ausführen* ("Run") → started with bash.
    No `chmod +x`, no terminal round trip.
 2. **Shortcut on the desktop** — right-click any file or folder → *Auf den Desktop* ("To the
-   desktop") → a symlink appears on the desktop. The counterpart of Windows'
-   *Send to → Desktop (create shortcut)*, which COSMIC Files does not have built in.
+   desktop"). A program becomes a real `.desktop` launcher with an icon, documents and folders
+   become a symlink. The counterpart of Windows' *Send to → Desktop (create shortcut)*, which
+   COSMIC Files does not have built in.
 
 ## Install
 
@@ -74,25 +75,46 @@ about `~` below. Adjust that line after copying.
 
 ### Desktop shortcuts: what the script does
 
-`desktop-shortcut.sh FILE...` creates one symlink per argument in the desktop directory. It takes
-that directory from `xdg-user-dir DESKTOP` and falls back to `~/Desktop`. On a German desktop that
-is `~/Schreibtisch` — the script follows the locale instead of hard-coding a folder name.
+`desktop-shortcut.sh FILE...` handles every argument on its own. It takes the desktop directory from
+`xdg-user-dir DESKTOP` and falls back to `~/Desktop`. On a German desktop that is `~/Schreibtisch` —
+the script follows the locale instead of hard-coding a folder name.
+
+**What gets created:**
+
+| Selection | Result |
+| --- | --- |
+| executable file that is not a `.desktop` file (binary, AppImage, script) | a real `Name.desktop` launcher, executable, with an icon |
+| `.desktop` file | a symlink — it already is a launcher and brings its own icon |
+| document, image, archive, folder | a symlink |
+
+**The launcher** gets `Type=Application`, `Name` (the file name without `.AppImage` / `.run` /
+`.bin` / `.exe` / `.sh`), `Exec="<absolute path>" %U`, `Path` = the folder the program lives in
+(Windows' "Start in"), `Categories=Utility;` and `X-DesktopShortcut-Target=<path>`, which is how a
+second run recognises its own work. `%U` is expanded only when files are dropped onto the icon, so a
+plain click starts the program without arguments.
+
+**The icon** is looked up in this order: a picture next to the program (`MeinTool.png` beside
+`MeinTool.AppImage`), then an icon of that name in the icon themes, then the generic
+`application-x-executable` — so a launcher never ends up without one.
+
+**Both kinds** behave the same way otherwise:
 
 * Names are kept: on the desktop, `Bericht.pdf` points to the file you right-clicked.
-* If the name is taken by something else, the new shortcut is numbered — `Bericht.pdf (2)`,
-  `(3)` … — the way Windows does it.
-* A shortcut that already exists (a symlink to the same target) is left alone instead of being
-  duplicated.
+* If the name is taken by something else, the new entry is numbered — `Bericht.pdf (2)`, `(3)` … —
+  the way Windows does it.
+* An entry that already exists (a symlink to the same target, or a launcher this script wrote for
+  that target) is left alone instead of being duplicated.
 * A file that already lives on the desktop is reported as skipped, not linked to itself.
 * A symlink you right-click is resolved first, so shortcuts do not chain.
 * Because a context action shows no output, the result is reported through `notify-send`
-  (created / skipped / failed). Without `notify-send` in `PATH` the script stays silent and still
-  works.
+  (launchers / shortcuts / skipped / failed). Without `notify-send` in `PATH` the script stays
+  silent and still works.
 * Exit code 0 on success, 1 if anything failed, 2 on a usage error — usable from a terminal too.
 
 ```
-$ desktop-shortcut.sh ~/Dokumente/Bericht.pdf ~/Dokumente/Bericht.pdf
-created /home/tom/Schreibtisch/Bericht.pdf -> /home/tom/Dokumente/Bericht.pdf
+$ desktop-shortcut.sh ~/Dokumente/Bericht.pdf ~/Werkzeuge/MeinTool.AppImage
+created shortcut /home/tom/Schreibtisch/Bericht.pdf -> /home/tom/Dokumente/Bericht.pdf
+created launcher /home/tom/Schreibtisch/MeinTool.desktop -> /home/tom/Werkzeuge/MeinTool.AppImage
 ```
 
 ## Fields
@@ -168,11 +190,15 @@ Rename the actions per language by just changing `name` — e.g. `name: "Run"` a
 cosmic-files `1:1.8.0-1.1` on CachyOS (Arch), 24 September 2026:
 
 * the menu entry appears and runs the selected `.sh` file (example 1),
-* `desktop-shortcut.sh` was exercised with: a file, a folder, a name with umlauts, a repeated run
-  (skipped), a name collision (numbered `(2)`), a file that already sits on the desktop (skipped),
-  a symlink (resolved to the target), a missing path (failed, exit 1), no arguments (exit 2),
-  a missing desktop directory (exit 1), and with `notify-send` missing from `PATH` (silent, still
-  creates the shortcut).
+* `desktop-shortcut.sh` was exercised with: a document and a folder (symlink), a plain executable, a
+  fake AppImage and a script with a space in its name (launcher), an already existing `.desktop`
+  file (symlink), a name collision (numbered `(2)`), a repeated run (skipped, "launcher already
+  exists"), a file that already sits on the desktop (skipped), a symlink as input (resolved to the
+  target), a missing path (failed, exit 1), no arguments (exit 2), a missing desktop directory
+  (exit 1), and with `notify-send` missing from `PATH` (silent, still creates the entry).
+* The generated launchers pass `desktop-file-validate`, including a file name containing a double
+  quote (escaped in `Exec`), and `gio launch MeinTool.desktop` really starts the program.
+* Once for real: a launcher created on the actual `~/Schreibtisch`, checked, and removed again.
 
 ## Sources
 
