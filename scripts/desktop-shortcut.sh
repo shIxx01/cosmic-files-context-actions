@@ -24,6 +24,10 @@
 #     and the launcher itself carries Terminal=false (otherwise a launcher that does honour
 #     Terminal=true would open a second terminal around the first one).
 #
+# Language: the messages are German when LC_ALL / LC_MESSAGES / LANG starts with "de", English
+# otherwise. The menu labels are written by install.sh with the same rule - cosmic-files shows
+# the configured name as it is, it has no translation of its own.
+#
 # Usage:
 #   desktop-shortcut.sh FILE...
 #
@@ -36,6 +40,70 @@
 set -u
 set -o pipefail
 
+# --- language -----------------------------------------------------------------------------
+
+locale_tag="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+locale_name="${locale_tag%%_*}"
+locale_name="${locale_name%%-*}"
+locale_name="${locale_name%%.*}"
+case "$locale_name" in
+    de) ui_lang=de ;;
+    *) ui_lang=en ;;
+esac
+
+declare -A MSG=(
+    [en:usage]='usage: %s FILE...'
+    [de:usage]='Aufruf: %s DATEI...'
+    [en:desktop_missing]="desktop directory '%s' does not exist"
+    [de:desktop_missing]="Zielordner '%s' existiert nicht"
+    [en:comment]='Launcher for %s'
+    [de:comment]='Starter für %s'
+    [en:not_found]='%s: not found'
+    [de:not_found]='%s: nicht gefunden'
+    [en:already_on_desktop]='%s: already on the desktop'
+    [de:already_on_desktop]='%s: liegt schon auf dem Schreibtisch'
+    [en:launcher_exists]='%s: launcher already exists'
+    [de:launcher_exists]='%s: Starter existiert schon'
+    [en:shortcut_exists]='%s: shortcut already exists'
+    [de:shortcut_exists]='%s: Verknüpfung existiert schon'
+    [en:no_free_name]='%s: no free name on the desktop'
+    [de:no_free_name]='%s: kein freier Name auf dem Schreibtisch'
+    [en:launcher_failed]='%s: could not write the launcher'
+    [de:launcher_failed]='%s: Starter konnte nicht geschrieben werden'
+    [en:shortcut_failed]='%s: could not create the shortcut'
+    [de:shortcut_failed]='%s: Verknüpfung konnte nicht erstellt werden'
+    [en:launchers]='Launchers: %s'
+    [de:launchers]='Starter: %s'
+    [en:shortcuts]='Shortcuts: %s'
+    [de:shortcuts]='Verknüpfungen: %s'
+    [en:skipped]='Skipped: %s'
+    [de:skipped]='Übersprungen: %s'
+    [en:failed]='Failed: %s'
+    [de:failed]='Fehlgeschlagen: %s'
+    [en:title]='Shortcut on the desktop'
+    [de:title]='Verknüpfung auf dem Schreibtisch'
+    [en:title_failed]='Shortcut on the desktop: failed'
+    [de:title_failed]='Verknüpfung auf dem Schreibtisch: fehlgeschlagen'
+    [en:title_nothing]='Shortcut on the desktop: nothing to do'
+    [de:title_nothing]='Verknüpfung auf dem Schreibtisch: nichts zu tun'
+    [en:created_launcher]='created launcher %s (Terminal=%s) -> %s'
+    [de:created_launcher]='Starter angelegt: %s (Terminal=%s) -> %s'
+    [en:created_shortcut]='created shortcut %s -> %s'
+    [de:created_shortcut]='Verknüpfung angelegt: %s -> %s'
+)
+
+# t <key> [values...] - the message in the system language, English as fallback.
+t() {
+    local key="$1"
+    shift
+    local format="${MSG["$ui_lang:$key"]:-${MSG["en:$key"]:-}}"
+    [ -n "$format" ] || return 0
+    # shellcheck disable=SC2059  # the formats come from the table above, no user input
+    printf "$format" "$@"
+}
+
+# --- setup --------------------------------------------------------------------------------
+
 desktop_dir="${DESKTOP_SHORTCUT_DIR:-}"
 if [ -z "$desktop_dir" ]; then
     desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null || true)
@@ -45,12 +113,14 @@ if [ -z "$desktop_dir" ] || [ ! -d "$desktop_dir" ]; then
 fi
 
 if [ "$#" -eq 0 ]; then
-    echo "usage: $(basename -- "$0") FILE..." >&2
+    t usage "$(basename -- "$0")" >&2
+    printf '\n' >&2
     exit 2
 fi
 
 if [ ! -d "$desktop_dir" ]; then
-    echo "desktop directory '$desktop_dir' does not exist" >&2
+    t desktop_missing "$desktop_dir" >&2
+    printf '\n' >&2
     exit 1
 fi
 
@@ -233,7 +303,7 @@ make_launcher() { # make_launcher <target> <launcher-path> <exec-line> <terminal
         printf 'Type=Application\n'
         printf 'Version=1.0\n'
         printf 'Name=%s\n' "$name"
-        printf 'Comment=Launcher for %s\n' "$target"
+        printf 'Comment=%s\n' "$(t comment "$target")"
         printf 'Exec=%s\n' "$exec_line"
         printf 'Path=%s\n' "$dir"
         printf 'Icon=%s\n' "$icon"
@@ -246,6 +316,8 @@ make_launcher() { # make_launcher <target> <launcher-path> <exec-line> <terminal
     return 0
 }
 
+# --- run ----------------------------------------------------------------------------------
+
 created_links=()
 created_launchers=()
 skipped=()
@@ -253,7 +325,7 @@ failed=()
 
 for arg in "$@"; do
     if [ ! -e "$arg" ] && [ ! -L "$arg" ]; then
-        failed+=("$(basename -- "$arg"): not found")
+        failed+=("$(t not_found "$(basename -- "$arg")")")
         continue
     fi
 
@@ -262,14 +334,14 @@ for arg in "$@"; do
     name=$(basename -- "$target")
 
     if [ "$(dirname -- "$target")" = "$desktop_dir" ]; then
-        skipped+=("$name: already on the desktop")
+        skipped+=("$(t already_on_desktop "$name")")
         continue
     fi
 
     # An executable file that is not itself a launcher gets a real .desktop file with an icon.
     if [ -f "$target" ] && [ -x "$target" ] && [ "${target%.desktop}" = "$target" ]; then
         if existing_launcher "$target" >/dev/null; then
-            skipped+=("$name: launcher already exists")
+            skipped+=("$(t launcher_exists "$name")")
             continue
         fi
         launcher_name="$name"
@@ -277,7 +349,7 @@ for arg in "$@"; do
             *.AppImage | *.appimage | *.run | *.bin | *.exe | *.sh) launcher_name="${launcher_name%.*}" ;;
         esac
         launcher=$(unique_path "$launcher_name" .desktop) || {
-            failed+=("$name: no free name on the desktop")
+            failed+=("$(t no_free_name "$name")")
             continue
         }
         need_terminal=$(needs_terminal "$target")
@@ -290,50 +362,52 @@ for arg in "$@"; do
         fi
         if make_launcher "$target" "$launcher" "$exec_line" "$terminal_flag_value"; then
             created_launchers+=("$(basename -- "$launcher")")
-            echo "created launcher $launcher (terminal: $need_terminal, Terminal=$terminal_flag_value) -> $target"
+            t created_launcher "$launcher" "$terminal_flag_value" "$target"
+            printf '\n'
         else
-            failed+=("$name: could not write the launcher")
+            failed+=("$(t launcher_failed "$name")")
         fi
         continue
     fi
 
     link="$desktop_dir/$name"
     if [ -L "$link" ] && [ "$(readlink -f -- "$link")" = "$target" ]; then
-        skipped+=("$name: shortcut already exists")
+        skipped+=("$(t shortcut_exists "$name")")
         continue
     fi
     link=$(unique_path "$name" '') || {
-        failed+=("$name: no free name on the desktop")
+        failed+=("$(t no_free_name "$name")")
         continue
     }
     if ln -s -- "$target" "$link"; then
         created_links+=("$(basename -- "$link")")
-        echo "created shortcut $link -> $target"
+        t created_shortcut "$link" "$target"
+        printf '\n'
     else
-        failed+=("$name: could not create the shortcut")
+        failed+=("$(t shortcut_failed "$name")")
     fi
 done
 
 body=""
 if [ "${#created_launchers[@]}" -gt 0 ]; then
-    body+="Launchers: ${created_launchers[*]}"$'\n'
+    body+="$(t launchers "${created_launchers[*]}")"$'\n'
 fi
 if [ "${#created_links[@]}" -gt 0 ]; then
-    body+="Shortcuts: ${created_links[*]}"$'\n'
+    body+="$(t shortcuts "${created_links[*]}")"$'\n'
 fi
 if [ "${#skipped[@]}" -gt 0 ]; then
-    body+="Skipped: ${skipped[*]}"$'\n'
+    body+="$(t skipped "${skipped[*]}")"$'\n'
 fi
 if [ "${#failed[@]}" -gt 0 ]; then
-    body+="Failed: ${failed[*]}"$'\n'
+    body+="$(t failed "${failed[*]}")"$'\n'
 fi
 
 if [ "${#failed[@]}" -gt 0 ]; then
-    notify "Shortcut on the desktop: failed" "$body" critical
-    echo "$body" >&2
+    notify "$(t title_failed)" "$body" critical
+    printf '%s\n' "$body" >&2
     exit 1
 elif [ "${#created_links[@]}" -gt 0 ] || [ "${#created_launchers[@]}" -gt 0 ]; then
-    notify "Shortcut on the desktop" "$body" normal
+    notify "$(t title)" "$body" normal
 else
-    notify "Shortcut on the desktop: nothing to do" "$body" low
+    notify "$(t title_nothing)" "$body" low
 fi

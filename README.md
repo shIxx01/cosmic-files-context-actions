@@ -18,7 +18,33 @@ Two examples, both taken from daily use on a CachyOS/Arch machine:
 
 ## Install
 
-### 1. The configuration file
+### The easy way
+
+```sh
+git clone https://github.com/shIxx01/cosmic-files-context-actions
+cd cosmic-files-context-actions
+./install.sh
+```
+
+`install.sh` does the two steps below for you:
+
+1. copies `scripts/desktop-shortcut.sh` into `~/.local/bin` (0755),
+2. writes `~/.config/cosmic/com.system76.CosmicFiles/v1/context_actions` with the absolute path of
+   that copy. An existing file is backed up first — as
+   `…/com.system76.CosmicFiles/context_actions.backup-<date>`, deliberately *next to* the version
+   directory and not inside it, because cosmic-config reads every file in there as a setting,
+3. prints how to restart the file manager (it reads the actions when it starts).
+
+**The menu labels follow the system language.** `name` is shown exactly as it stands and has no
+translation of its own, so the installer writes it for you: German (`Ausführen`, `Auf den Desktop`)
+only on a German system, English (`Run`, `Send to Desktop`) on every other one — French, Spanish,
+anything. Changed the system language later? Run the installer again. Options: `--lang de|en` forces
+the language, `--prefix DIR` installs the script elsewhere, `--print` only prints the configuration
+file without changing anything.
+
+### Step by step
+
+#### 1. The configuration file
 
 cosmic-config stores every configuration property as its own file in RON format, so the file has to
 exist at exactly this path, with exactly this name and **no extension**:
@@ -36,7 +62,7 @@ pkill -x cosmic-files; cosmic-files &
 
 The entries show up in the more/"…" section of the context menu.
 
-### 2. The script for the desktop shortcut
+#### 2. The script for the desktop shortcut
 
 Put [`scripts/desktop-shortcut.sh`](scripts/desktop-shortcut.sh) somewhere permanent and make it
 executable:
@@ -137,7 +163,8 @@ see the tests below.
 * A file that already lives on the desktop is reported as skipped, not linked to itself.
 * A symlink you right-click is resolved first, so shortcuts do not chain.
 * Because a context action shows no output, the result is reported through `notify-send`
-  (launchers / shortcuts / skipped / failed). Without `notify-send` in `PATH` the script stays
+  (launchers / shortcuts / skipped / failed) — in the system language, like the menu labels:
+  German on a German system, English otherwise. Without `notify-send` in `PATH` the script stays
   silent and still works.
 * Exit code 0 on success, 1 if anything failed, 2 on a usage error — usable from a terminal too.
 
@@ -195,7 +222,8 @@ Hand the whole selection to one script instead of starting it once per file:
 ```
 
 Rename the actions per language by just changing `name` — e.g. `name: "Run"` and
-`name: "Send to desktop"`.
+`name: "Send to desktop"`. That is what `install.sh` does from the system language, see
+[Install](#install).
 
 ## Pitfalls
 
@@ -240,6 +268,24 @@ cosmic-files `1:1.8.0-1.1` on CachyOS (Arch), 24 September 2026:
   test script wrote its marker file from inside the terminal (with `cosmic-term -e` and with
   `alacritty -e`).
 * Once for real: a launcher created on the actual `~/Schreibtisch`, checked, and removed again.
+* `install.sh` was run in a sandbox for both languages: it installs the script, writes the matching
+  labels together with the absolute script path, backs an existing file up outside the version
+  directory and leaves nothing behind inside `v1/`.
+* The language rule was checked from the outside: `LANG=de_DE.UTF-8` gives the German labels and
+  messages, `en_US.UTF-8` and `fr_FR.UTF-8` give English, `LC_ALL` wins over `LANG`, `--lang`
+  overrides both, and an unsupported value exits with code 2.
+* Script messages and the `Comment=` of a generated launcher follow the same rule; the whole run is
+  39 checks, all green.
+
+[`tests/checks.sh`](tests/checks.sh) runs all of this again in a sandbox of its own — own `HOME`,
+own desktop directory, faked `notify-send` and terminal emulator, nothing of the real home directory
+touched, no window opened, no notification shown:
+
+```sh
+tests/checks.sh
+# …
+# result: 39 passed, 0 failed
+```
 
 ## Sources
 
